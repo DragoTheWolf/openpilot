@@ -111,31 +111,31 @@ class CarState(CarStateBase):
     # braking release bits are set.
     # Refer to VW Self Study Program 890253: Volkswagen Driver Assistance
     # Systems, chapter on Front Assist with Braking: Golf Family for all MQB
-    ret.stockFcw = bool(ext_cp.vl["ACC_10"]["AWV2_Freigabe"])
-    ret.stockAeb = bool(ext_cp.vl["ACC_10"]["ANB_Teilbremsung_Freigabe"]) or bool(ext_cp.vl["ACC_10"]["ANB_Zielbremsung_Freigabe"])
+    #ret.stockFcw = bool(ext_cp.vl["ACC_10"]["AWV2_Freigabe"])
+    #ret.stockAeb = bool(ext_cp.vl["ACC_10"]["ANB_Teilbremsung_Freigabe"]) or bool(ext_cp.vl["ACC_10"]["ANB_Zielbremsung_Freigabe"])
 
     # Update ACC radar status.
-    self.acc_type = ext_cp.vl["ACC_06"]["ACC_Typ"]
-    if pt_cp.vl["TSK_06"]["TSK_Status"] == 2:
+    #self.acc_type = ext_cp.vl["ACC_06"]["ACC_Typ"]
+    #if pt_cp.vl["TSK_06"]["TSK_Status"] == 2:
       # ACC okay and enabled, but not currently engaged
-      ret.cruiseState.available = True
-      ret.cruiseState.enabled = False
-    elif pt_cp.vl["TSK_06"]["TSK_Status"] in (3, 4, 5):
+      #ret.cruiseState.available = True
+      #ret.cruiseState.enabled = False
+    #elif pt_cp.vl["TSK_06"]["TSK_Status"] in (3, 4, 5):
       # ACC okay and enabled, currently regulating speed (3) or driver accel override (4) or brake only (5)
-      ret.cruiseState.available = True
-      ret.cruiseState.enabled = True
-    else:
+      #ret.cruiseState.available = False
+      #ret.cruiseState.enabled = False
+    #else:
       # ACC okay but disabled (1), or a radar visibility or other fault/disruption (6 or 7)
-      ret.cruiseState.available = False
-      ret.cruiseState.enabled = False
-    self.esp_hold_confirmation = bool(pt_cp.vl["ESP_21"]["ESP_Haltebestaetigung"])
-    ret.cruiseState.standstill = self.CP.pcmCruise and self.esp_hold_confirmation
-    ret.accFaulted = pt_cp.vl["TSK_06"]["TSK_Status"] in (6, 7)
+      #ret.cruiseState.available = False
+      #ret.cruiseState.enabled = False
+    #self.esp_hold_confirmation = bool(pt_cp.vl["ESP_21"]["ESP_Haltebestaetigung"])
+    #ret.cruiseState.standstill = self.CP.pcmCruise and self.esp_hold_confirmation
+    #ret.accFaulted = pt_cp.vl["TSK_06"]["TSK_Status"] in (6, 7)
 
     # Update ACC setpoint. When the setpoint is zero or there's an error, the
     # radar sends a set-speed of ~90.69 m/s / 203mph.
     if self.CP.pcmCruise:
-      ret.cruiseState.speed = ext_cp.vl["ACC_02"]["ACC_Wunschgeschw_02"] * CV.KPH_TO_MS
+      ret.cruiseState.speed = ext_cp.vl["Motor_02"]["Soll_Geschwindigkeit_bei_GRA_Be"] * CV.KPH_TO_MS
       if ret.cruiseState.speed > 90:
         ret.cruiseState.speed = 0
 
@@ -143,7 +143,7 @@ class CarState(CarStateBase):
     ret.leftBlinker = bool(pt_cp.vl["Blinkmodi_02"]["Comfort_Signal_Left"])
     ret.rightBlinker = bool(pt_cp.vl["Blinkmodi_02"]["Comfort_Signal_Right"])
     ret.buttonEvents = self.create_button_events(pt_cp, self.CCP.BUTTONS)
-    self.gra_stock_values = pt_cp.vl["GRA_ACC_01"]
+    self.gra_stock_values = pt_cp.vl["GRA_STATUS"]
 
     # Additional safety checks performed in CarInterface.
     ret.espDisabled = pt_cp.vl["ESP_21"]["ESP_Tastung_passiv"] != 0
@@ -178,7 +178,7 @@ class CarState(CarStateBase):
 
     # Verify EPS readiness to accept steering commands
     hca_status = self.CCP.hca_status_values.get(pt_cp.vl["Lenkhilfe_2"]["LH2_Sta_HCA"])
-    ret.steerFaultPermanent = hca_status in ("DISABLED", "FAULT")
+    ret.steerFaultPermanent = hca_status in ("DISABLED", "FAULT") and ret.cruiseState.speed != 0 #band aid, need to fix
     ret.steerFaultTemporary = hca_status in ("INITIALIZING", "REJECTED")
 
     # Update gas, brakes, and gearshift.
@@ -230,20 +230,16 @@ class CarState(CarStateBase):
     ret.stockAeb = False
 
     # Update ACC radar status.
-    self.acc_type = ext_cp.vl["ACC_System"]["ACS_Typ_ACC"]
-    ret.cruiseState.available = bool(pt_cp.vl["Motor_5"]["GRA_Hauptschalter"])
-    ret.cruiseState.enabled = pt_cp.vl["Motor_2"]["GRA_Status"] in (1, 2)
-    if self.CP.pcmCruise:
-      ret.accFaulted = ext_cp.vl["ACC_GRA_Anzeige"]["ACA_StaACC"] in (6, 7)
-    else:
-      ret.accFaulted = pt_cp.vl["Motor_2"]["GRA_Status"] == 3
-
+    self.acc_type = 0
+    
     # Update ACC setpoint. When the setpoint reads as 255, the driver has not
     # yet established an ACC setpoint, so treat it as zero.
-    ret.cruiseState.speed = ext_cp.vl["ACC_GRA_Anzeige"]["ACA_V_Wunsch"] * CV.KPH_TO_MS
+    ret.cruiseState.speed = pt_cp.vl["Motor_2"]["Soll_Geschwindigkeit_bei_GRA_Be"] * CV.KPH_TO_MS
     if ret.cruiseState.speed > 70:  # 255 kph in m/s == no current setpoint
       ret.cruiseState.speed = 0
-
+      
+    ret.cruiseState.available = bool(pt_cp.vl["Motor_5"]["GRA_Hauptschalter"]) and ret.cruiseState.speed != 0 and hca_status not in ("DISABLED", "FAULT")
+    ret.cruiseState.enabled = pt_cp.vl["Motor_2"]["GRA_Status"] in (1, 2) and ret.cruiseState.available
     # Update button states for turn signals and ACC controls, capture all ACC button state/config for passthrough
     ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_stalk(300, pt_cp.vl["Gate_Komf_1"]["GK1_Blinker_li"],
                                                                             pt_cp.vl["Gate_Komf_1"]["GK1_Blinker_re"])
@@ -341,11 +337,11 @@ class CarState(CarStateBase):
     elif CP.transmissionType == TransmissionType.manual:
       messages += [("Motor_1", 100)]  # From J623 Engine control module
 
-    if CP.networkLocation == NetworkLocation.fwdCamera:
+    #if CP.networkLocation == NetworkLocation.fwdCamera:
       # Extended CAN devices other than the camera are here on CANBUS.pt
-      messages += PqExtraSignals.fwd_radar_messages
-      if CP.enableBsm:
-        messages += PqExtraSignals.bsm_radar_messages
+      #messages += PqExtraSignals.fwd_radar_messages
+      #if CP.enableBsm:
+        #messages += PqExtraSignals.bsm_radar_messages
 
     return CANParser(DBC[CP.carFingerprint]["pt"], messages, CANBUS.pt)
 
@@ -359,33 +355,3 @@ class CarState(CarStateBase):
         # sig_address, frequency
         ("LDW_Status", 10)      # From R242 Driver assistance camera
       ]
-
-    if CP.networkLocation == NetworkLocation.gateway:
-      # Radars are here on CANBUS.cam
-      messages += PqExtraSignals.fwd_radar_messages
-      if CP.enableBsm:
-        messages += PqExtraSignals.bsm_radar_messages
-
-    return CANParser(DBC[CP.carFingerprint]["pt"], messages, CANBUS.cam)
-
-
-class MqbExtraSignals:
-  # Additional signal and message lists for optional or bus-portable controllers
-  fwd_radar_messages = [
-    ("ACC_06", 50),                              # From J428 ACC radar control module
-    ("ACC_10", 50),                              # From J428 ACC radar control module
-    ("ACC_02", 17),                              # From J428 ACC radar control module
-  ]
-  bsm_radar_messages = [
-    ("SWA_01", 20),                              # From J1086 Lane Change Assist
-  ]
-
-class PqExtraSignals:
-  # Additional signal and message lists for optional or bus-portable controllers
-  fwd_radar_messages = [
-    ("ACC_System", 50),                          # From J428 ACC radar control module
-    ("ACC_GRA_Anzeige", 25),                     # From J428 ACC radar control module
-  ]
-  bsm_radar_messages = [
-    ("SWA_1", 20),                               # From J1086 Lane Change Assist
-  ]
