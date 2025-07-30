@@ -1,3 +1,7 @@
+# Comma 2 Install Command via SSH
+
+curl -Ls https://tinyurl.com/bdhse3xn | bash -s DragoTheWolf r2-pq-noradar
+
 # Legacypilot
 
 This software includes contributions from [dragonpilot](https://github.com/dragonpilot-community/dragonpilot/tree/beta2) and [openpilot](https://github.com/commaai/openpilot).
