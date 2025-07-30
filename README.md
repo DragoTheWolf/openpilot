@@ -2,9 +2,12 @@
 
 curl -Ls https://tinyurl.com/bdhse3xn | bash -s DragoTheWolf r2-pq-noradar
 
-currently cannot steer under 31MPH and complains about steering angle on some turns
+~currently cannot steer under 31MPH and~ complains about steering angle on some turns
+cannot steer under 15MPH without 3501 firmware and patch for steering rack
 
 tested working on a 2014 Golf 2.5L
+
+wheel base information has been updated to reflect a mk6 Golf instead of the NMS Passat
 
 # Legacypilot
 
