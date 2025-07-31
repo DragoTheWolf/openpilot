@@ -29,22 +29,18 @@ from websocket import (ABNF, WebSocket, WebSocketException, WebSocketTimeoutExce
 
 import cereal.messaging as messaging
 from cereal import log
-from cereal.services import SERVICE_LIST
-from openpilot.common.api import Api
-from openpilot.common.basedir import PERSIST
-from openpilot.common.file_helpers import CallbackReader
-from openpilot.common.params import Params
-from openpilot.common.realtime import set_core_affinity
-from openpilot.system.hardware import HARDWARE, PC, AGNOS
-from openpilot.system.loggerd.config import ROOT
-from openpilot.system.loggerd.xattr_cache import getxattr, setxattr
-from openpilot.selfdrive.statsd import STATS_DIR
-from openpilot.system.swaglog import SWAGLOG_DIR, cloudlog
-from openpilot.system.version import get_commit, get_origin, get_short_branch, get_version
-
-
-# TODO: use socket constant when mypy recognizes this as a valid attribute
-TCP_USER_TIMEOUT = 18
+from cereal.services import service_list
+from common.api import Api
+from common.basedir import PERSIST
+from common.file_helpers import CallbackReader
+from common.params import Params
+from common.realtime import sec_since_boot, set_core_affinity
+from system.hardware import HARDWARE, PC, AGNOS
+from system.loggerd.config import ROOT
+from selfdrive.loggerd.xattr_cache import getxattr, setxattr
+from selfdrive.statsd import STATS_DIR
+from system.swaglog import SWAGLOG_DIR, cloudlog
+from system.version import get_commit, get_origin, get_short_branch, get_version
 
 ATHENA_HOST = os.getenv('ATHENA_HOST', 'wss://athena.comma.ai')
 HANDLER_THREADS = int(os.getenv('HANDLER_THREADS', "4"))
@@ -85,7 +81,7 @@ class UploadItem:
   url: str
   headers: Dict[str, str]
   created_at: int
-  id: Optional[str] # noqa: A003 (to match the response from the remote server)
+  id: Optional[str]
   retry_count: int = 0
   current: bool = False
   progress: float = 0
@@ -141,11 +137,10 @@ class UploadQueueCache:
       cloudlog.exception("athena.UploadQueueCache.cache.exception")
 
 
-def handle_long_poll(ws: WebSocket, exit_event: Optional[threading.Event]) -> None:
+def handle_long_poll(ws: WebSocket) -> None:
   end_event = threading.Event()
 
   threads = [
-    threading.Thread(target=ws_manage, args=(ws, end_event), name='ws_manage'),
     threading.Thread(target=ws_recv, args=(ws, end_event), name='ws_recv'),
     threading.Thread(target=ws_send, args=(ws, end_event), name='ws_send'),
     threading.Thread(target=upload_handler, args=(end_event,), name='upload_handler'),
@@ -159,9 +154,8 @@ def handle_long_poll(ws: WebSocket, exit_event: Optional[threading.Event]) -> No
   for thread in threads:
     thread.start()
   try:
-    while not end_event.wait(0.1):
-      if exit_event is not None and exit_event.is_set():
-        end_event.set()
+    while not end_event.is_set():
+      time.sleep(0.1)
   except (KeyboardInterrupt, SystemExit):
     end_event.set()
     raise
@@ -177,7 +171,7 @@ def jsonrpc_handler(end_event: threading.Event) -> None:
     try:
       data = recv_queue.get(timeout=1)
       if "method" in data:
-        cloudlog.event("athena.jsonrpc_handler.call_method", data=data)
+        cloudlog.debug(f"athena.jsonrpc_handler.call_method {data}")
         response = JSONRPCResponseManager.handle(data, dispatcher)
         send_queue.put_nowait(response.json)
       elif "id" in data and ("result" in data or "error" in data):
@@ -213,16 +207,6 @@ def retry_upload(tid: int, end_event: threading.Event, increase_count: bool = Tr
         break
 
 
-def cb(sm, item, tid, sz: int, cur: int) -> None:
-  # Abort transfer if connection changed to metered after starting upload
-  sm.update(0)
-  metered = sm['deviceState'].networkMetered
-  if metered and (not item.allow_cellular):
-    raise AbortTransferException
-
-  cur_upload_items[tid] = replace(item, progress=cur / sz if sz else 1)
-
-
 def upload_handler(end_event: threading.Event) -> None:
   sm = messaging.SubMaster(['deviceState'])
   tid = threading.get_ident()
@@ -252,6 +236,15 @@ def upload_handler(end_event: threading.Event) -> None:
         continue
 
       try:
+        def cb(sz: int, cur: int) -> None:
+          # Abort transfer if connection changed to metered after starting upload
+          sm.update(0)
+          metered = sm['deviceState'].networkMetered
+          if metered and (not item.allow_cellular):
+            raise AbortTransferException
+
+          cur_upload_items[tid] = replace(item, progress=cur / sz if sz else 1)
+
         fn = item.path
         try:
           sz = os.path.getsize(fn)
@@ -259,7 +252,7 @@ def upload_handler(end_event: threading.Event) -> None:
           sz = -1
 
         cloudlog.event("athena.upload_handler.upload_start", fn=fn, sz=sz, network_type=network_type, metered=metered, retry_count=item.retry_count)
-        response = _do_upload(item, partial(cb, sm, item, tid))
+        response = _do_upload(item, cb)
 
         if response.status_code not in (200, 201, 401, 403, 412):
           cloudlog.event("athena.upload_handler.retry", status_code=response.status_code, fn=fn, sz=sz, network_type=network_type, metered=metered)
@@ -310,7 +303,7 @@ def _do_upload(upload_item: UploadItem, callback: Optional[Callable] = None) -> 
 # security: user should be able to request any message from their car
 @dispatcher.add_method
 def getMessage(service: str, timeout: int = 1000) -> Dict:
-  if service is None or service not in SERVICE_LIST:
+  if service is None or service not in service_list:
     raise Exception("invalid service")
 
   socket = messaging.sub_sock(service, timeout=timeout)
@@ -525,11 +518,6 @@ def getSshAuthorizedKeys() -> str:
 
 
 @dispatcher.add_method
-def getGithubUsername() -> str:
-  return Params().get("GithubUsername", encoding='utf8') or ''
-
-
-@dispatcher.add_method
 def getSimInfo():
   return HARDWARE.get_sim_info()
 
@@ -552,7 +540,7 @@ def getNetworks():
 
 @dispatcher.add_method
 def takeSnapshot() -> Optional[Union[str, Dict[str, str]]]:
-  from openpilot.system.camerad.snapshot.snapshot import jpeg_write, snapshot
+  from system.camerad.snapshot.snapshot import jpeg_write, snapshot
   ret = snapshot()
   if ret is not None:
     def b64jpeg(x):
@@ -593,10 +581,10 @@ def log_handler(end_event: threading.Event) -> None:
     return
 
   log_files = []
-  last_scan = 0.
+  last_scan = 0
   while not end_event.is_set():
     try:
-      curr_scan = time.monotonic()
+      curr_scan = sec_since_boot()
       if curr_scan - last_scan > 10:
         log_files = get_logs_to_send_sorted()
         last_scan = curr_scan
@@ -652,8 +640,8 @@ def log_handler(end_event: threading.Event) -> None:
 
 def stat_handler(end_event: threading.Event) -> None:
   while not end_event.is_set():
-    last_scan = 0.
-    curr_scan = time.monotonic()
+    last_scan = 0
+    curr_scan = sec_since_boot()
     try:
       if curr_scan - last_scan > 10:
         stat_filenames = list(filter(lambda name: not name.startswith(tempfile.gettempprefix()), os.listdir(STATS_DIR)))
@@ -721,7 +709,7 @@ def ws_proxy_send(ws: WebSocket, local_sock: socket.socket, signal_sock: socket.
 
 
 def ws_recv(ws: WebSocket, end_event: threading.Event) -> None:
-  last_ping = int(time.monotonic() * 1e9)
+  last_ping = int(sec_since_boot() * 1e9)
   while not end_event.is_set():
     try:
       opcode, data = ws.recv_data(control_frame=True)
@@ -730,10 +718,10 @@ def ws_recv(ws: WebSocket, end_event: threading.Event) -> None:
           data = data.decode("utf-8")
         recv_queue.put_nowait(data)
       elif opcode == ABNF.OPCODE_PING:
-        last_ping = int(time.monotonic() * 1e9)
+        last_ping = int(sec_since_boot() * 1e9)
         Params().put("LastAthenaPingTime", str(last_ping))
     except WebSocketTimeoutException:
-      ns_since_last_ping = int(time.monotonic() * 1e9) - last_ping
+      ns_since_last_ping = int(sec_since_boot() * 1e9) - last_ping
       if ns_since_last_ping > RECONNECT_TIMEOUT_S * 1e9:
         cloudlog.exception("athenad.ws_recv.timeout")
         end_event.set()
@@ -761,30 +749,11 @@ def ws_send(ws: WebSocket, end_event: threading.Event) -> None:
       end_event.set()
 
 
-def ws_manage(ws: WebSocket, end_event: threading.Event) -> None:
-  params = Params()
-  onroad_prev = None
-  sock = ws.sock
-
-  while True:
-    onroad = params.get_bool("IsOnroad")
-    if onroad != onroad_prev:
-      onroad_prev = onroad
-
-      sock.setsockopt(socket.IPPROTO_TCP, TCP_USER_TIMEOUT, 16000 if onroad else 0)
-      sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 7 if onroad else 30)
-      sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 7 if onroad else 10)
-      sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 2 if onroad else 3)
-
-    if end_event.wait(5):
-      break
-
-
 def backoff(retries: int) -> int:
   return random.randrange(0, min(128, int(2 ** retries)))
 
 
-def main(exit_event: Optional[threading.Event] = None):
+def main():
   try:
     set_core_affinity([0, 1, 2, 3])
   except Exception:
@@ -797,30 +766,26 @@ def main(exit_event: Optional[threading.Event] = None):
   ws_uri = ATHENA_HOST + "/ws/v2/" + dongle_id
   api = Api(dongle_id)
 
-  conn_start = None
   conn_retries = 0
-  while exit_event is None or not exit_event.is_set():
+  while 1:
     try:
-      if conn_start is None:
-        conn_start = time.monotonic()
-
-      cloudlog.event("athenad.main.connecting_ws", ws_uri=ws_uri, retries=conn_retries)
+      cloudlog.event("athenad.main.connecting_ws", ws_uri=ws_uri)
       ws = create_connection(ws_uri,
                              cookie="jwt=" + api.get_token(),
                              enable_multithread=True,
                              timeout=30.0)
-      cloudlog.event("athenad.main.connected_ws", ws_uri=ws_uri, retries=conn_retries,
-                     duration=time.monotonic() - conn_start)
-      conn_start = None
+      cloudlog.event("athenad.main.connected_ws", ws_uri=ws_uri)
 
       conn_retries = 0
       cur_upload_items.clear()
 
-      handle_long_poll(ws, exit_event)
+      handle_long_poll(ws)
     except (KeyboardInterrupt, SystemExit):
       break
     except (ConnectionError, TimeoutError, WebSocketException):
       conn_retries += 1
+      params.remove("LastAthenaPingTime")
+    except socket.timeout:
       params.remove("LastAthenaPingTime")
     except Exception:
       cloudlog.exception("athenad.main.exception")
