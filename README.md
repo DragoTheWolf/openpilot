@@ -2,7 +2,7 @@
 
 curl -Ls https://tinyurl.com/bdhse3xn | bash -s DragoTheWolf r2-pq-noradar
 
-~currently cannot steer under 31MPH and~ complains about steering angle on some turns
+~currently cannot steer under 31MPH and complains about steering angle on some turns~
 
 cannot steer under 15MPH without 3501 firmware and patch for steering rack
 
