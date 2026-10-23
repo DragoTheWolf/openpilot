@@ -7,11 +7,17 @@ from opendbc.car.toyota.values import ToyotaFlags
 from opendbc.car.volkswagen.values import VolkswagenFlags
 
 from openpilot.selfdrive.selfdrived.events import Events
+from openpilot.selfdrive.car.volkswagen import pq_aol_enabled
 
 ButtonType = structs.CarState.ButtonEvent.Type
 GearShifter = structs.CarState.GearShifter
 EventName = log.OnroadEvent.EventName
 NetworkLocation = structs.CarParams.NetworkLocation
+
+
+def brake_disengages(cp, cs, previous, enabled):
+  pressed = cs.brakePressed and (not previous.brakePressed or not cs.standstill)
+  return pressed and not (pq_aol_enabled(cp) and enabled)
 
 
 class CarEvents:
@@ -22,6 +28,8 @@ class CarEvents:
     self.low_speed_alert = False
     self.no_steer_warning = False
     self.silent_steer_warning = True
+    self.aol_button_armed = {ButtonType.setCruise: False, ButtonType.resumeCruise: False}
+    self.aol_cancel_pressed = False
 
   def update(self, CS: car.CarState, CS_prev: car.CarState, CC: car.CarControl):
     if self.CP.brand in ('body', 'mock'):
@@ -99,7 +107,8 @@ class CarEvents:
 
     CI = interfaces[self.CP.carFingerprint]
     # TODO: cleanup the honda-specific logic
-    pcm_enable = self.CP.pcmCruise and self.CP.brand != 'honda'
+    aol = pq_aol_enabled(self.CP)
+    pcm_enable = self.CP.pcmCruise and self.CP.brand != 'honda' and not aol
     # TODO: on some hyundai cars, the cancel button is also the pause/resume button,
     # so only use it for cancel when running openpilot longitudinal
     allow_button_cancel = self.CP.brand != 'hyundai'
@@ -185,6 +194,27 @@ class CarEvents:
       self.silent_steer_warning = False
     if CS.steerFaultPermanent:
       events.add(EventName.steerUnavailable)
+
+    if aol:
+      for button in CS.buttonEvents:
+        if button.type == ButtonType.cancel:
+          self.aol_cancel_pressed = button.pressed
+      blocked = not CS.cruiseState.available or CS.accFaulted or self.aol_cancel_pressed
+      request = not CS_prev.accFaulted and CS.cruiseState.enabled and not CS_prev.cruiseState.enabled
+      for button in CS.buttonEvents:
+        button_type = button.type.raw
+        if button_type in self.aol_button_armed:
+          if button.pressed:
+            self.aol_button_armed[button_type] = not blocked and not CS.brakePressed
+          else:
+            request |= self.aol_button_armed[button_type]
+            self.aol_button_armed[button_type] = False
+      if blocked or CS.brakePressed:
+        self.aol_button_armed = dict.fromkeys(self.aol_button_armed, False)
+      if blocked:
+        events.add(EventName.pcmDisable)
+      elif request and not CS.blockPcmEnable and not CS.brakePressed:
+        events.add(EventName.buttonEnable)
 
     # we engage when pcm is active (rising edge)
     # enabling can optionally be blocked by the car interface

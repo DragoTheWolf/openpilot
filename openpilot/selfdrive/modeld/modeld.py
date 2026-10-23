@@ -43,7 +43,7 @@ from openpilot.selfdrive.modeld.helpers import MODELS_DIR, chestnut_present, che
 
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 
-LAT_SMOOTH_SECONDS = 0.0
+LAT_SMOOTH_SECONDS = 0.1  # Match comma's original Rebellious Hope model commit.
 LONG_SMOOTH_SECONDS = 0.3
 MIN_LAT_CONTROL_SPEED = 0.3
 BIG_MODEL_TIMEOUT = 60

@@ -20,9 +20,27 @@ The engine state correctly reports this car's cruise as non-adaptive. The generi
 
 For an EPS already patched to support low-speed steering, enable **Settings → Toggles → Flashed PQ EPS** while offroad, then reboot. This persistent setting defaults off. It applies the IQ release's `VwPqEpsPatched` behavior (`minSteerSpeed = 0`) specifically to the detected NMS/Golf PQ CC-only configuration. With it off, the existing 50 km/h (31 mph) minimum remains.
 
-This changes the steering-speed parameter and resulting low-speed alert; it does not flash the EPS. Factory cruise engagement, minimum engagement speed, normal standstill behavior, torque/rate limits, and fault handling remain unchanged. MADS/independent parked engagement is not included, as requested.
+This changes the steering-speed parameter and resulting low-speed alert; it does not flash the EPS. Minimum engagement speed, normal standstill behavior, torque/rate limits, and fault handling remain unchanged. Independent engagement is separately controlled by the optional AOL setting below.
 
 The flashed-EPS update passes **204 tests and 106 subtests**, with 81 skips, across setting persistence/scope, existing interface propagation, low-speed alerts, engagement/manual selection, Params, Volkswagen vehicle and PQ safety tests. Ruff, incremental Linux build, and both UI layout/render/offroad-edit checks pass. Physical low-speed steering remains to be validated on the user's flashed rack.
+
+## AOL / MADS for factory CC
+
+Enable **Settings → Toggles → AOL (CC Only)** offroad and reboot. It defaults off and applies only to this detected NMS/Golf PQ CC-only configuration. The matching panda debug firmware must be rebuilt from the pinned modified opendbc source; startup's firmware signature check handles a stale installed panda image. This mode adds no acceleration commands or automatic SET/RESUME messages.
+
+- Engaging factory cruise requests steering engagement, subject to normal checks. Cruise main on by itself does not engage steering.
+- After a cancellation, a deliberate SET/RES button press and release requests engagement again. Those physical buttons also retain their normal factory-cruise function.
+- Braking cancels factory speed control normally and retains already-engaged AOL steering. A held brake cannot start a new steering engagement. Releasing the brake does not start a disabled steering session.
+- Cancel, main off, or an engine cruise fault disengages steering. Clearing a fault does not automatically re-engage it.
+- Factory cruise alone controls speed. Disengaging steering does not automatically send a factory-cruise cancel. The brake-retention exception is restricted to the explicitly selected PQ CC-only AOL safety mode; stock PQ and other safety modes retain their normal brake disengagement. Door, seatbelt, gear, driver-monitoring, steering-fault, torque/rate, receive-validity, relay, and heartbeat protections remain. Normal Park/reverse and standstill policies are retained; this is not a parked steering override.
+
+PQ active steering already uses **HCA7**, with HCA3 for inactive/zero-torque output. A controller-output test verifies this; no HCA5 switch or torque-limit relaxation was needed.
+
+## Default model
+
+The default driving model is now comma's original **Rebellious Hope**, taken only from comma commit `93f5aa4` and its official LFS artifact. See `openpilot/selfdrive/modeld/models/README.md` for the hash, historical upstream revert, and the compatibility wrapper required by the newer runtime. IQ's model/runtime is not used.
+
+Final brake-handoff validation: **3,095 passed, 1,395 skipped, 9,835 subtests passed** across the complete native safety suite and AOL/model/vehicle regressions. MISRA/mutation checks, incremental Linux build, and ARM panda debug build pass. The original Rebellious Hope model compilation/serialization, production model runtime warmup/inference at 1928×1208 and 1344×760, and temporal sampling tests pass. Physical AOL operation, QCOM model timing, and driving behavior remain unverified. Original C3 legacy-updater/F4/AR0231 support is separate work and is not included in this update.
 
 Native tests using decoded engine CAN cover engagement requests, cancellation/faults, other engagement protections, and preservation of the mode block outside the scoped configuration. Combined engagement/manual-selection/Volkswagen/PQ safety suites: **182 passed, 81 skipped, 106 subtests passed**; lint and incremental Linux build passed. The user reports onroad entry and calibration on the prior version, with engagement blocked by this alert. The fix still needs confirmation on the physical device.
 

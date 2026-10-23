@@ -16,7 +16,8 @@ from openpilot.common.realtime import config_realtime_process, Priority, Ratekee
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.gps import get_gps_location_service
 
-from openpilot.selfdrive.car.car_events import CarEvents
+from openpilot.selfdrive.car.car_events import CarEvents, brake_disengages
+from openpilot.selfdrive.car.volkswagen import pq_aol_enabled
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.selfdrive.selfdrived.events import Events, ET
 from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
@@ -248,7 +249,7 @@ class SelfdriveD:
 
       # Disable on rising edge of accelerator or brake. Also disable on brake when speed > 0
       if (CS.gasPressed and not self.CS_prev.gasPressed and self.disengage_on_accelerator) or \
-        (CS.brakePressed and (not self.CS_prev.brakePressed or not CS.standstill)) or \
+        brake_disengages(self.CP, CS, self.CS_prev, self.enabled) or \
         (CS.regenBraking and (not self.CS_prev.regenBraking or not CS.standstill)):
         self.events.add(EventName.pedalPressed)
 
@@ -413,7 +414,7 @@ class SelfdriveD:
 
     if not REPLAY:
       # Check for mismatch between openpilot and car's PCM
-      cruise_mismatch = CS.cruiseState.enabled and (not self.enabled or not self.CP.pcmCruise)
+      cruise_mismatch = not pq_aol_enabled(self.CP) and CS.cruiseState.enabled and (not self.enabled or not self.CP.pcmCruise)
       self.cruise_mismatch_counter = self.cruise_mismatch_counter + 1 if cruise_mismatch else 0
       if self.cruise_mismatch_counter > int(6. / DT_CTRL):
         self.events.add(EventName.cruiseMismatch)

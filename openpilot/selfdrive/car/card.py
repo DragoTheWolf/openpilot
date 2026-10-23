@@ -21,7 +21,7 @@ from opendbc.car.interfaces import CarInterfaceBase, RadarInterfaceBase
 from openpilot.selfdrive.pandad import can_capnp_to_list, can_list_to_can_capnp
 from openpilot.selfdrive.car.cruise import VCruiseHelper
 from openpilot.selfdrive.car.manual_fingerprint import manual_fingerprint
-from openpilot.selfdrive.car.volkswagen import apply_patched_pq_eps
+from openpilot.selfdrive.car.volkswagen import apply_patched_pq_eps, apply_pq_aol
 
 REPLAY = "REPLAY" in os.environ
 
@@ -112,6 +112,7 @@ class Car:
       self.RI = RI
 
     apply_patched_pq_eps(self.CP, self.params)
+    apply_pq_aol(self.CP, self.params)
     self.CP.alternativeExperience = 0
     openpilot_enabled_toggle = self.params.get_bool("OpenpilotEnabledToggle")
     controller_available = self.CI.CC is not None and openpilot_enabled_toggle and not self.CP.dashcamOnly

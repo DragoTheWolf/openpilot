@@ -39,18 +39,19 @@ compiler = Dir('#tinygrad_repo/examples/openpilot').abspath
 # build on all cores
 taskset = 'taskset -c 0-7 ' if arch == 'comma_arm64' else ''
 
-def compile_model(onnx_path, pkl_path):
+def compile_model(onnx_path, pkl_path, compiler_path=None):
   onnx_path, target_pkl_path = File(onnx_path).abspath, File(pkl_path).abspath
-  cmd = (f'{tg_flags} {mac_brew_string} {taskset}python3 "{compiler}/compile_onnx.py" '
+  compiler_path = compiler_path or f'{compiler}/compile_onnx.py'
+  cmd = (f'{tg_flags} {mac_brew_string} {taskset}python3 "{compiler_path}" '
          f'"{onnx_path}" "{target_pkl_path}" --out-of-band --benchmark-runs 1')
   lenv.Command(
     target_pkl_path,
-    tinygrad_files + [onnx_path, Value(cmd)],
+    tinygrad_files + [onnx_path, compiler_path, Value(cmd)],
     Action(cmd, "  [ONNX] $TARGET"),
   )
 
 compile_model('models/dmonitoring_model.onnx', 'models/dmonitoring_model_tinygrad.pkl')
-compile_model('models/driving_supercombo.onnx', 'models/driving_tinygrad.pkl')
+compile_model('models/driving_supercombo.onnx', 'models/driving_tinygrad.pkl', File('compile_rebellious_hope.py').abspath)
 
 model_w, model_h = MEDMODEL_INPUT_SIZE
 for cam_w, cam_h in camera_configs:

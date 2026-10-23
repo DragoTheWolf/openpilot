@@ -8,6 +8,7 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.layouts.settings.initial_cruise_speed import InitialCruiseSpeedControl
 from openpilot.selfdrive.car.manual_fingerprint import MANUAL_CAR_LABELS, MANUAL_CAR_DESCRIPTION, manual_car_index, set_manual_car
 from openpilot.selfdrive.car.volkswagen import PATCHED_EPS_PARAM, PATCHED_EPS_DESCRIPTION, set_patched_pq_eps
+from openpilot.selfdrive.car.volkswagen import AOL_PARAM, AOL_DESCRIPTION, set_pq_aol
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
@@ -153,7 +154,11 @@ class TogglesLayout(Widget):
       callback=self._set_patched_eps,
       enabled=ui_state.is_offroad,
     )
-    self._scroller = Scroller([self._manual_car, self._patched_eps, *self._toggles.values()], line_separator=True, spacing=0)
+    self._aol = toggle_item(
+      lambda: tr("AOL (CC Only)"), lambda: tr(AOL_DESCRIPTION),
+      initial_state=self._params.get_bool(AOL_PARAM), callback=self._set_aol, enabled=ui_state.is_offroad,
+    )
+    self._scroller = Scroller([self._manual_car, self._patched_eps, self._aol, *self._toggles.values()], line_separator=True, spacing=0)
 
     ui_state.add_engaged_transition_callback(self._update_toggles)
 
@@ -173,6 +178,7 @@ class TogglesLayout(Widget):
     ui_state.update_params()
     self._manual_car.action_item.set_selected_button(manual_car_index(self._params))
     self._patched_eps.action_item.set_state(self._params.get_bool(PATCHED_EPS_PARAM))
+    self._aol.action_item.set_state(self._params.get_bool(AOL_PARAM))
     self._initial_cruise_speed.action_item.refresh()
 
     if ui_state.CP is not None:
@@ -198,6 +204,10 @@ class TogglesLayout(Widget):
   def _set_patched_eps(self, enabled):
     if ui_state.is_offroad():
       set_patched_pq_eps(self._params, enabled)
+
+  def _set_aol(self, enabled):
+    if ui_state.is_offroad():
+      set_pq_aol(self._params, enabled)
 
   def _toggle_callback(self, state: bool, param: str):
     self._params.put_bool(param, state, block=True)
