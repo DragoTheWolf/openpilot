@@ -16,6 +16,14 @@ Manual selection skips VIN/firmware identification queries and still collects li
 
 The engine state correctly reports this car's cruise as non-adaptive. The generic `wrongCruiseMode` event previously interpreted that as an unsupported mode and displayed "Adaptive Cruise Disabled". The engagement event check now permits non-adaptive cruise specifically for Volkswagen `PQ_CC_ONLY` with factory longitudinal control (`pcmCruise`, without openpilot longitudinal). Other configurations retain the normal block. Engine cruise engagement, cancellation, cruise faults, and other engagement protections are unchanged.
 
+## Flashed PQ EPS
+
+For an EPS already patched to support low-speed steering, enable **Settings → Toggles → Flashed PQ EPS** while offroad, then reboot. This persistent setting defaults off. It applies the IQ release's `VwPqEpsPatched` behavior (`minSteerSpeed = 0`) specifically to the detected NMS/Golf PQ CC-only configuration. With it off, the existing 50 km/h (31 mph) minimum remains.
+
+This changes the steering-speed parameter and resulting low-speed alert; it does not flash the EPS. Factory cruise engagement, minimum engagement speed, normal standstill behavior, torque/rate limits, and fault handling remain unchanged. MADS/independent parked engagement is not included, as requested.
+
+The flashed-EPS update passes **204 tests and 106 subtests**, with 81 skips, across setting persistence/scope, existing interface propagation, low-speed alerts, engagement/manual selection, Params, Volkswagen vehicle and PQ safety tests. Ruff, incremental Linux build, and both UI layout/render/offroad-edit checks pass. Physical low-speed steering remains to be validated on the user's flashed rack.
+
 Native tests using decoded engine CAN cover engagement requests, cancellation/faults, other engagement protections, and preservation of the mode block outside the scoped configuration. Combined engagement/manual-selection/Volkswagen/PQ safety suites: **182 passed, 81 skipped, 106 subtests passed**; lint and incremental Linux build passed. The user reports onroad entry and calibration on the prior version, with engagement blocked by this alert. The fix still needs confirmation on the physical device.
 
 ## Completed offline validation

@@ -7,6 +7,7 @@ from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callba
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.mici.layouts.settings.initial_cruise_speed import InitialCruiseSpeedButton
 from openpilot.selfdrive.car.manual_fingerprint import MANUAL_CAR_LABELS, MANUAL_CAR_DESCRIPTION, manual_car_index, set_manual_car
+from openpilot.selfdrive.car.volkswagen import PATCHED_EPS_PARAM, PATCHED_EPS_DESCRIPTION, set_patched_pq_eps
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
@@ -18,6 +19,9 @@ class TogglesLayoutMici(NavScroller):
     self._manual_car = BigMultiToggle("manual fingerprint", list(MANUAL_CAR_LABELS),
                                       select_callback=self._set_manual_car, description=MANUAL_CAR_DESCRIPTION)
     self._manual_car.set_enabled(ui_state.is_offroad)
+    self._patched_eps = BigToggle("flashed PQ EPS", initial_state=ui_state.params.get_bool(PATCHED_EPS_PARAM),
+                                  toggle_callback=self._set_patched_eps, description=PATCHED_EPS_DESCRIPTION)
+    self._patched_eps.set_enabled(ui_state.is_offroad)
 
     self._personality_toggle = BigMultiParamToggle("following distance", "LongitudinalPersonality", ["aggressive", "standard", "relaxed"],
                                                    description="Standard is recommended.\n" +
@@ -44,6 +48,7 @@ class TogglesLayoutMici(NavScroller):
 
     self._scroller.add_widgets([
       self._manual_car,
+      self._patched_eps,
       self._personality_toggle,
       self._initial_cruise_speed,
       is_metric_toggle,
@@ -94,6 +99,7 @@ class TogglesLayoutMici(NavScroller):
   def _update_toggles(self):
     ui_state.update_params()
     self._manual_car.set_value(MANUAL_CAR_LABELS[manual_car_index(ui_state.params)])
+    self._patched_eps.set_checked(ui_state.params.get_bool(PATCHED_EPS_PARAM))
     self._initial_cruise_speed.refresh()
 
     if ui_state.CP is not None:
@@ -106,3 +112,7 @@ class TogglesLayoutMici(NavScroller):
   def _set_manual_car(self, label):
     if ui_state.is_offroad():
       set_manual_car(ui_state.params, MANUAL_CAR_LABELS.index(label))
+
+  def _set_patched_eps(self, enabled):
+    if ui_state.is_offroad():
+      set_patched_pq_eps(ui_state.params, enabled)
