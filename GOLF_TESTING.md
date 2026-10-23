@@ -12,6 +12,12 @@ In **Settings → Toggles → Manual Fingerprint**, choose **Passat NMS** for th
 
 Manual selection skips VIN/firmware identification queries and still collects live CAN to determine topology and validate the scoped CC-only configuration. It does not bypass missing CAN or enable the port on an empty fingerprint. Selecting a mode clears the cached vehicle parameters. Invalid saved model names fall back to automatic detection. The former hardcoded launch override has been replaced by this setting.
 
+## Factory cruise engagement
+
+The engine state correctly reports this car's cruise as non-adaptive. The generic `wrongCruiseMode` event previously interpreted that as an unsupported mode and displayed "Adaptive Cruise Disabled". The engagement event check now permits non-adaptive cruise specifically for Volkswagen `PQ_CC_ONLY` with factory longitudinal control (`pcmCruise`, without openpilot longitudinal). Other configurations retain the normal block. Engine cruise engagement, cancellation, cruise faults, and other engagement protections are unchanged.
+
+Native tests using decoded engine CAN cover engagement requests, cancellation/faults, other engagement protections, and preservation of the mode block outside the scoped configuration. Combined engagement/manual-selection/Volkswagen/PQ safety suites: **182 passed, 81 skipped, 106 subtests passed**; lint and incremental Linux build passed. The user reports onroad entry and calibration on the prior version, with engagement blocked by this alert. The fix still needs confirmation on the physical device.
+
 ## Completed offline validation
 
 - Ubuntu 24.04 / WSL2: full x86_64 desktop openpilot default SCons build passed.

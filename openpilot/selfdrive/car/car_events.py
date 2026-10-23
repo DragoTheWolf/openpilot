@@ -4,6 +4,7 @@ from opendbc.car import DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.interfaces import MAX_CTRL_SPEED
 from opendbc.car.toyota.values import ToyotaFlags
+from opendbc.car.volkswagen.values import VolkswagenFlags
 
 from openpilot.selfdrive.selfdrived.events import Events
 
@@ -125,7 +126,13 @@ class CarEvents:
       events.add(EventName.stockLkas)
     if CS.vEgo > MAX_CTRL_SPEED:
       events.add(EventName.speedTooHigh)
-    if CS.cruiseState.nonAdaptive:
+    # This scoped PQ port intentionally uses factory non-adaptive cruise for
+    # speed control. Keep the decoded state truthful without treating it as an
+    # unsupported ACC mode. Other cars and longitudinal configurations retain
+    # the normal engagement block.
+    pq_factory_cruise = (self.CP.brand == 'volkswagen' and self.CP.flags & VolkswagenFlags.PQ_CC_ONLY and
+                         self.CP.pcmCruise and not self.CP.openpilotLongitudinalControl)
+    if CS.cruiseState.nonAdaptive and not pq_factory_cruise:
       events.add(EventName.wrongCruiseMode)
     if CS.brakeHoldActive and self.CP.openpilotLongitudinalControl:
       events.add(EventName.brakeHold)
