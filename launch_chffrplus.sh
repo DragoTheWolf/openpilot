@@ -25,7 +25,7 @@ function agnos_init {
       sudo reboot
     fi
     while true; do
-      "$DIR/openpilot/common/hardware/comma/updater" "$AGNOS_PY" "$MANIFEST"
+      bash "$DIR/openpilot/common/hardware/comma/bootstrap_updater.sh" "$AGNOS_PY" "$MANIFEST"
     done
   fi
 }
@@ -85,6 +85,8 @@ function launch {
   # hardware specific init
   if [ -f /AGNOS ]; then
     agnos_init
+    source "$DIR/openpilot/common/hardware/comma/mount_c3_storage.sh"
+    mount_c3_storage
   fi
 
   # write tmux scrollback to a file

@@ -109,10 +109,14 @@ class Amplifier:
   def set_global_shutdown(self, amp_disabled: bool) -> bool:
     return self.set_configs([self._get_shutdown_config(amp_disabled), ])
 
-  def initialize_configuration(self) -> bool:
+  def initialize_configuration(self, model: str = "tizi") -> bool:
+    config = CONFIG
+    if model == "tici":
+      from openpilot.common.hardware.comma.amplifier_tici import CONFIG as TICI_CONFIG
+      config = TICI_CONFIG
     cfgs = [
       self._get_shutdown_config(True),
-      *CONFIG,
+      *config,
       self._get_shutdown_config(False),
     ]
     return self.set_configs(cfgs)
