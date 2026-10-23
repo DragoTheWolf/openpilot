@@ -2,9 +2,6 @@
 
 export OMP_NUM_THREADS=1
 
-# Testing fork: preserve the NMS selection used by this Golf's working install.
-# Vehicle support still requires the CC-only fingerprint checks in opendbc.
-export FINGERPRINT="VOLKSWAGEN_PASSAT_NMS"
 export MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1

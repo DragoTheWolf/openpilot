@@ -6,6 +6,7 @@ from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.layouts.settings.initial_cruise_speed import InitialCruiseSpeedControl
+from openpilot.selfdrive.car.manual_fingerprint import MANUAL_CAR_LABELS, MANUAL_CAR_DESCRIPTION, manual_car_index, set_manual_car
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
@@ -135,7 +136,16 @@ class TogglesLayout(Widget):
         self._toggles["LongitudinalPersonality"] = self._long_personality_setting
         self._toggles["InitialCruiseSpeedKph"] = self._initial_cruise_speed
 
-    self._scroller = Scroller(list(self._toggles.values()), line_separator=True, spacing=0)
+    self._manual_car = multiple_button_item(
+      lambda: tr("Manual Fingerprint"),
+      lambda: tr(MANUAL_CAR_DESCRIPTION),
+      buttons=[lambda label=label: tr(label) for label in MANUAL_CAR_LABELS],
+      selected_index=manual_car_index(self._params),
+      button_width=300,
+      callback=self._set_manual_car,
+    )
+    self._manual_car.action_item.set_enabled(ui_state.is_offroad)
+    self._scroller = Scroller([self._manual_car, *self._toggles.values()], line_separator=True, spacing=0)
 
     ui_state.add_engaged_transition_callback(self._update_toggles)
 
@@ -153,6 +163,7 @@ class TogglesLayout(Widget):
 
   def _update_toggles(self):
     ui_state.update_params()
+    self._manual_car.action_item.set_selected_button(manual_car_index(self._params))
     self._initial_cruise_speed.action_item.refresh()
 
     if ui_state.CP is not None:
@@ -170,6 +181,10 @@ class TogglesLayout(Widget):
 
   def _render(self, rect):
     self._scroller.render(rect)
+
+  def _set_manual_car(self, index):
+    if ui_state.is_offroad():
+      set_manual_car(self._params, index)
 
   def _toggle_callback(self, state: bool, param: str):
     self._params.put_bool(param, state, block=True)

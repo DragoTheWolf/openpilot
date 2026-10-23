@@ -1,11 +1,12 @@
 from openpilot.cereal import log
 
 from openpilot.system.ui.widgets.scroller import NavScroller
-from openpilot.selfdrive.ui.mici.widgets.button import BigToggle, BigParamControl, BigMultiParamToggle
+from openpilot.selfdrive.ui.mici.widgets.button import BigToggle, BigParamControl, BigMultiParamToggle, BigMultiToggle
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.mici.layouts.settings.initial_cruise_speed import InitialCruiseSpeedButton
+from openpilot.selfdrive.car.manual_fingerprint import MANUAL_CAR_LABELS, MANUAL_CAR_DESCRIPTION, manual_car_index, set_manual_car
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
@@ -13,6 +14,10 @@ PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 class TogglesLayoutMici(NavScroller):
   def __init__(self):
     super().__init__()
+
+    self._manual_car = BigMultiToggle("manual fingerprint", list(MANUAL_CAR_LABELS),
+                                      select_callback=self._set_manual_car, description=MANUAL_CAR_DESCRIPTION)
+    self._manual_car.set_enabled(ui_state.is_offroad)
 
     self._personality_toggle = BigMultiParamToggle("following distance", "LongitudinalPersonality", ["aggressive", "standard", "relaxed"],
                                                    description="Standard is recommended.\n" +
@@ -38,6 +43,7 @@ class TogglesLayoutMici(NavScroller):
                                                    "Disable to use your car's stock driver assistance.")
 
     self._scroller.add_widgets([
+      self._manual_car,
       self._personality_toggle,
       self._initial_cruise_speed,
       is_metric_toggle,
@@ -87,6 +93,7 @@ class TogglesLayoutMici(NavScroller):
 
   def _update_toggles(self):
     ui_state.update_params()
+    self._manual_car.set_value(MANUAL_CAR_LABELS[manual_car_index(ui_state.params)])
     self._initial_cruise_speed.refresh()
 
     if ui_state.CP is not None:
@@ -95,3 +102,7 @@ class TogglesLayoutMici(NavScroller):
     # Refresh toggles from params to mirror external changes
     for key, item in self._refresh_toggles:
       item.set_checked(ui_state.params.get_bool(key))
+
+  def _set_manual_car(self, label):
+    if ui_state.is_offroad():
+      set_manual_car(ui_state.params, MANUAL_CAR_LABELS.index(label))
