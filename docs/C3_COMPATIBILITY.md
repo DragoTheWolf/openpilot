@@ -17,6 +17,34 @@ Qt/Wayland updater, using `wayland-egl`. The AGNOS flasher defers annotations so
 installed Python before the OS upgrade. Partition checks, hashes, and the
 existing A/B update and reboot flow remain in use.
 
+## Original-C3 boot chain
+
+The standard AGNOS 20.1 boot chain does not support the original C3: its ABL
+can show "Unsupported firmware detected", and its boot image has no
+`comma tici` device tree. Fixing the prompt alone is insufficient.
+
+On device-tree models `comma tici` and `comma three`, `agnos.py` resolves the
+generic manifest symlink and selects sibling `agnos_c3.json`. This applies to
+verification, flashing (including background updates), and slot switching.
+A missing C3 manifest fails before partition operations rather than silently
+using the incompatible default. Other devices retain `agnos.json`.
+
+The C3 manifest uses official openpilot v0.10.0 / AGNOS 12.8 `xbl`,
+`xbl_config`, `abl`, `aop`, `devcfg` and `boot`, with the exact current AGNOS
+20.1 `system` entry. The boot chain remains a matched stock set; the kernel is
+the C3-compatible stock kernel, not the current C3X/C4 kernel. All six boot
+images were downloaded from comma's distribution URLs and checked against
+their official sizes and SHA-256 hashes. The stock boot image's appended DTBs
+include `comma tici`; the standard 20.1 boot image's DTBs do not.
+
+These are unmodified official boot artifacts, not IQ or dragonpilot binaries.
+Partition hashing, A/B flags and download checks remain enabled. The combined
+stock boot chain and 20.1 userspace still require a physical C3 boot/runtime
+test. A device already stopped at the bootloader warning cannot fetch this
+fix; recover it to stock C3 firmware before reinstalling the testing URL.
+
+## Updater artifact provenance
+
 The Weston executable is unmodified from official comma release v0.10.0,
 commit `c085b8af19438956c15592828bd082803f43dfaf`, whose `launch_env.sh` requests
 AGNOS 12.8:
@@ -72,15 +100,19 @@ ran in a bounded five-second probe with `/bin/false` as the flasher and was
 terminated by the timeout without a startup exception. This validates startup,
 not an OS flash. The installed dragonpilot updater also uses a Python/Magic UI.
 
-Six desktop tests cover display routing and the actual launch/version/selector
+Seventeen desktop tests cover display routing, original-C3 manifest selection
+through verify/flash/swap (including background flashing), pinned boot-chain
+hashes, unchanged current userspace, and the actual launch/version/selector
 chain from a simulated stock 12.8 filesystem with privileged/device commands
 stubbed out. The latter verifies that a 12.8/20.1 mismatch reaches the Weston
 prompt executable with the fork's own flasher and manifest. The exact official
-Weston artifact's hash and size were verified; the physical test device still
-runs 18.4, so a real 12.8 prompt and OS transition remain untested.
+Weston artifact's hash and size were verified. The user then confirmed that
+the stock installation displayed/downloaded the AGNOS update, but reboot
+stopped at "Unsupported firmware detected". SSH timed out in that state.
+The new C3 boot-chain/current-userspace combination remains physically untested.
 
-Desktop/native compilation and tests do not confirm the physical C3 update
-prompt, AGNOS 20.1 boot, all three cameras, USB controller recovery, NVMe,
+Desktop/native compilation and tests do not confirm AGNOS 20.1 boot,
+all three cameras, USB controller recovery, NVMe,
 or on-road operation. Treat this as a hardware test candidate; a complete fresh
 fork installation and AGNOS transition still require testing on the device.
 First startup builds the controller firmware and model.

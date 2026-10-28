@@ -5,6 +5,7 @@ import hashlib
 import json
 import lzma
 import os
+from pathlib import Path
 import struct
 import subprocess
 import time
@@ -15,6 +16,25 @@ import requests
 SPARSE_CHUNK_FMT = struct.Struct('H2xI4x')
 
 AGNOS_MANIFEST_FILE = "openpilot/system/hardware/comma/agnos.json"
+
+
+def get_device_model() -> str:
+  try:
+    return Path('/sys/firmware/devicetree/base/model').read_text().rstrip('\x00\n')
+  except FileNotFoundError:
+    return ''
+
+
+def select_agnos_manifest(manifest_path: str) -> str:
+  # New AGNOS bootloaders reject the original C3 and its kernel omits the
+  # comma_tici device tree. Keep the stock C3 boot chain with current userspace.
+  # Resolve the compatibility symlink so CLI and background updates agree.
+  manifest = Path(manifest_path).resolve()
+  if get_device_model() in ('comma tici', 'comma three') and manifest.name == 'agnos.json':
+    manifest = manifest.with_name('agnos_c3.json')
+    if not manifest.is_file():
+      raise FileNotFoundError(f'Original comma 3 requires its compatible AGNOS manifest: {manifest}')
+  return str(manifest)
 
 
 class StreamingDecompressor:
@@ -210,6 +230,7 @@ def flash_partition(target_slot_number: int, partition: dict, cloudlog, standalo
 
 
 def swap(manifest_path: str, target_slot_number: int, cloudlog) -> None:
+  manifest_path = select_agnos_manifest(manifest_path)
   update = json.load(open(manifest_path))
   for partition in update:
     if not partition.get('full_check', False):
@@ -225,6 +246,7 @@ def swap(manifest_path: str, target_slot_number: int, cloudlog) -> None:
 
 
 def flash_agnos_update(manifest_path: str, target_slot_number: int, cloudlog, standalone=False) -> None:
+  manifest_path = select_agnos_manifest(manifest_path)
   update = json.load(open(manifest_path))
 
   cloudlog.info(f"Target slot {target_slot_number}")
@@ -254,6 +276,7 @@ def flash_agnos_update(manifest_path: str, target_slot_number: int, cloudlog, st
 
 
 def verify_agnos_update(manifest_path: str, target_slot_number: int) -> bool:
+  manifest_path = select_agnos_manifest(manifest_path)
   update = json.load(open(manifest_path))
   return all(verify_partition(target_slot_number, partition) for partition in update)
 
