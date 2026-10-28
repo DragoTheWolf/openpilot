@@ -7,11 +7,14 @@ if [ "$#" -ne 2 ] || [ ! -f "$1" ] || [ ! -f "$2" ]; then
   exit 2
 fi
 
-# Magic AGNOS ships a self-contained updater for its own display protocol.
-# The old Qt binary cannot use eglfs on Magic (and bypasses its DRM broker).
+# Stock AGNOS 12.8 uses Weston. The current updater targets Magic, so use
+# comma's official v0.10.0 Weston artifact before upgrading that stock OS.
 if systemctl is-active --quiet weston-ready; then
-  exec "$updater_dir/updater" "$1" "$2"
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/var/tmp/weston}"
+  export QT_QPA_PLATFORM=wayland-egl
+  exec "$updater_dir/updater_weston" "$1" "$2"
 elif [ -x /usr/comma/updater ]; then
+  # Magic AGNOS supplies an updater for its own display protocol.
   exec /usr/comma/updater "$1" "$2"
 else
   # Pre-Magic AGNOS uses the original Qt/Wayland updater.

@@ -6,13 +6,28 @@ four continue to use the H7 controller target.
 
 ## Installer bootstrap
 
-The requested OS remains AGNOS 20.1. The launcher selects the modern updater
-when `weston-ready` is active. Otherwise it uses the executable
+The requested OS remains AGNOS 20.1. Stock AGNOS 12.8 is an explicitly supported
+bootstrap source: when `weston-ready` is active, the launcher selects the
+official openpilot v0.10.0 Weston updater bundled as `updater_weston` and defaults
+`XDG_RUNTIME_DIR` to `/var/tmp/weston`. The current bundled `updater` is a Magic
+UI and must not be selected on stock Weston. Otherwise the launcher uses the executable
 `/usr/comma/updater` supplied by AGNOS, which supports that OS's Magic display
 protocol. Only systems without that updater fall back to comma's original
 Qt/Wayland updater, using `wayland-egl`. The AGNOS flasher defers annotations so it can import under the older
 installed Python before the OS upgrade. Partition checks, hashes, and the
 existing A/B update and reboot flow remain in use.
+
+The Weston executable is unmodified from official comma release v0.10.0,
+commit `c085b8af19438956c15592828bd082803f43dfaf`, whose `launch_env.sh` requests
+AGNOS 12.8:
+
+- LFS artifact: `system/hardware/tici/updater` in that commit.
+- SHA-256: `eba5f44e6a763e1f74d1c718993218adcc72cba4caafe99b595fa701151a4c54`.
+- Size: 10,448,792 bytes; downloaded and verified from comma's official LFS store.
+- Official AGNOS 12.8 source: commaai/agnos-builder
+  `1a63095a493207e1dd1a9eaa1c08ff4ebe4ebf81`. Its startup waits for
+  `weston-ready` and sets the Weston runtime directory above; it has no
+  `/usr/comma/updater` artifact.
 
 The legacy executable is unmodified from official comma release v0.9.7,
 commit `50dd024081496cc5f036a99c8f62d2887112dbb7`:
@@ -56,6 +71,13 @@ missing `libmtdev.so.1`. All direct ELF dependencies resolved. The system update
 ran in a bounded five-second probe with `/bin/false` as the flasher and was
 terminated by the timeout without a startup exception. This validates startup,
 not an OS flash. The installed dragonpilot updater also uses a Python/Magic UI.
+
+Six desktop tests cover display routing and the actual launch/version/selector
+chain from a simulated stock 12.8 filesystem with privileged/device commands
+stubbed out. The latter verifies that a 12.8/20.1 mismatch reaches the Weston
+prompt executable with the fork's own flasher and manifest. The exact official
+Weston artifact's hash and size were verified; the physical test device still
+runs 18.4, so a real 12.8 prompt and OS transition remain untested.
 
 Desktop/native compilation and tests do not confirm the physical C3 update
 prompt, AGNOS 20.1 boot, all three cameras, USB controller recovery, NVMe,
