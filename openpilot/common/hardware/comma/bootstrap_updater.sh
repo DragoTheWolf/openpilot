@@ -7,11 +7,14 @@ if [ "$#" -ne 2 ] || [ ! -f "$1" ] || [ ! -f "$2" ]; then
   exit 2
 fi
 
-# Old AGNOS uses Qt/Magic directly on the display. Its installed Python UI
-# dependencies cannot run the current Weston updater before the OS upgrade.
+# Magic AGNOS ships a self-contained updater for its own display protocol.
+# The old Qt binary cannot use eglfs on Magic (and bypasses its DRM broker).
 if systemctl is-active --quiet weston-ready; then
   exec "$updater_dir/updater" "$1" "$2"
+elif [ -x /usr/comma/updater ]; then
+  exec /usr/comma/updater "$1" "$2"
 else
-  export QT_QPA_PLATFORM=eglfs
+  # Pre-Magic AGNOS uses the original Qt/Wayland updater.
+  export QT_QPA_PLATFORM=wayland-egl
   exec "$updater_dir/updater_magic" "$1" "$2"
 fi

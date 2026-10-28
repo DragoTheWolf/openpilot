@@ -7,8 +7,10 @@ four continue to use the H7 controller target.
 ## Installer bootstrap
 
 The requested OS remains AGNOS 20.1. The launcher selects the modern updater
-when `weston-ready` is active; otherwise it uses comma's original Qt/Magic
-updater. The AGNOS flasher defers annotations so it can import under the older
+when `weston-ready` is active. Otherwise it uses the executable
+`/usr/comma/updater` supplied by AGNOS, which supports that OS's Magic display
+protocol. Only systems without that updater fall back to comma's original
+Qt/Wayland updater, using `wayland-egl`. The AGNOS flasher defers annotations so it can import under the older
 installed Python before the OS upgrade. Partition checks, hashes, and the
 existing A/B update and reboot flow remain in use.
 
@@ -48,9 +50,15 @@ was a reference for the legacy-display selection and original-device gaps.
 
 ## Validation limits
 
+On October 28, the exact legacy ELF reproduced a startup abort on the original
+C3 running AGNOS 18.4 when forced to `eglfs`: its platform plugin requires the
+missing `libmtdev.so.1`. All direct ELF dependencies resolved. The system updater
+ran in a bounded five-second probe with `/bin/false` as the flasher and was
+terminated by the timeout without a startup exception. This validates startup,
+not an OS flash. The installed dragonpilot updater also uses a Python/Magic UI.
+
 Desktop/native compilation and tests do not confirm the physical C3 update
 prompt, AGNOS 20.1 boot, all three cameras, USB controller recovery, NVMe,
-or on-road operation. No original C3 logs or reachable SSH connection were
-available during implementation. Treat this as a hardware test candidate;
-the reported logo hang has not yet been reproduced or confirmed fixed on
-the device. First startup builds the controller firmware and model.
+or on-road operation. Treat this as a hardware test candidate; a complete fresh
+fork installation and AGNOS transition still require testing on the device.
+First startup builds the controller firmware and model.
