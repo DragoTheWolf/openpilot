@@ -93,6 +93,26 @@ was a reference for the legacy-display selection and original-device gaps.
 
 ## Validation limits
 
+### October 29 physical panda verification
+
+The original C3 boots on the compatible boot chain with AGNOS 20.1 userspace.
+Its first runtime test exposed three additional gaps: 10 ms reset/recovery
+delays prevented reliable F4 DFU entry; the native device table omitted tici;
+and the shared camera clock driver accessed TIM8 instead of the original F4
+TIM1 complementary channels. Restore the official C3 reset delays and TIM1
+clock configuration, and identify tici/three as DeviceType::TICI. C3X/C4 retain
+their existing timing and clock configuration.
+
+On the offroad original C3, normal pandad recovery successfully programmed the
+F4 bootstub/application and connected over USB. After the native rebuild and
+timer fix, 100 consecutive pandaStates samples were live, valid and fault-free,
+with no lost heartbeat. Pandad and bootlog compiled natively; both F4/H7 firmware
+targets built with warnings treated as errors. H7 firmware remained byte-identical.
+The reset regression checks GPIO ordering and delays for tici, three, tizi and mici.
+Camera capture, on-road operation and the other peripherals remain unverified.
+
+The earlier failure details below describe the pre-fix validation history.
+
 On October 28, the exact legacy ELF reproduced a startup abort on the original
 C3 running AGNOS 18.4 when forced to `eglfs`: its platform plugin requires the
 missing `libmtdev.so.1`. All direct ELF dependencies resolved. The system updater
