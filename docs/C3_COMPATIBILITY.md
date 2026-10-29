@@ -109,7 +109,14 @@ timer fix, 100 consecutive pandaStates samples were live, valid and fault-free,
 with no lost heartbeat. Pandad and bootlog compiled natively; both F4/H7 firmware
 targets built with warnings treated as errors. H7 firmware remained byte-identical.
 The reset regression checks GPIO ordering and delays for tici, three, tizi and mici.
-Camera capture, on-road operation and the other peripherals remain unverified.
+On the subsequent parked-car camera test, camerad exited during cabin BPS
+acquisition because the AR0231 entries in bps_cfg, bps_striping_output and
+bps_settings were empty placeholders. Restored those three entries from the
+pinned official openpilot a254a05 source; all other sensor entries remain
+unchanged. Camerad rebuilt on the C3, and all three camera services published
+50 live/valid consecutive frames with IDs advancing from 0 to 49. The user
+confirmed the camera picture loaded. Steering/engagement and the other
+peripherals still require validation.
 
 The earlier failure details below describe the pre-fix validation history.
 
