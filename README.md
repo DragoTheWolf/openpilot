@@ -7,7 +7,7 @@ preserved. Upstream attribution and license notices remain in place.
 - **`testing`**: modern Golf PQ development with factory cruise speed control,
   AOL steering, and original comma 3 compatibility work. See [project details](GOLF_TESTING.md).
 - **`bench`**: selectable offroad hardware tests with separate light 5 V and
-  bench 12 V modes. See the [benchmark guide](openpilot/tools/benchmarks/README.md)
+  bench 12 V modes. See the [benchmark guide](https://github.com/DragoTheWolf/openpilot/blob/bench/openpilot/tools/benchmarks/README.md)
   on that branch.
 - **Legacy comma 2 / Dragonpilot project**: maintained separately at
   [DragoTheWolf/dragonpilotc2](https://github.com/DragoTheWolf/dragonpilotc2).
