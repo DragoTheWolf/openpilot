@@ -68,14 +68,16 @@ def cpu_worker(stop, load, counter):
     stop.wait(max(0, 0.1 - (time.monotonic() - start)))
 
 
-def memory_worker(stop, size_mib, counter):
+def memory_worker(stop, size_mib, counter, load=1):
   data = bytearray(size_mib * MIB)
   address = ctypes.addressof(ctypes.c_char.from_buffer(data))
   value = 0
   while not stop.is_set():
+    start = time.monotonic()
     ctypes.memset(address, value, len(data))
     counter.value += len(data)
     value ^= 0xFF
+    stop.wait((time.monotonic() - start) * (1 / load - 1))
 
 
 def storage_health(directory):
@@ -108,7 +110,7 @@ def storage_health(directory):
   return report
 
 
-def storage_worker(stop, directory, size_mib, results):
+def storage_worker(stop, directory, size_mib, results, pause=0):
   # The only file this worker writes lives inside its own new temporary directory.
   with tempfile.TemporaryDirectory(prefix='openpilot-bench-', dir=directory) as temporary:
     test_file = Path(temporary).resolve() / 'integrity.bin'
@@ -126,6 +128,8 @@ def storage_worker(stop, directory, size_mib, results):
             return
           file.write(block)
           expected.update(block)
+          if pause and stop.wait(pause):
+            return
         file.flush()
         flush_start = time.monotonic()
         os.fsync(file.fileno())
@@ -148,6 +152,68 @@ def storage_worker(stop, directory, size_mib, results):
       except queue.Full:
         pass
       stop.wait(0.1)
+
+
+class BenchPower:
+  """Temporarily bring the big cluster online; retain configured frequency ceilings."""
+  def __init__(self, mode, device=Path('/AGNOS'), cpu_root=Path('/sys/devices/system/cpu')):
+    self.mode, self.device, self.cpu_root = mode, device, cpu_root
+    self.saved = []
+
+  def write(self, path, value):
+    # Pass values as arguments, never through a shell. sudo must already be available.
+    subprocess.run(['sudo', '-n', 'tee', str(path)], input=value + '\n', text=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True, timeout=5)
+    if path.read_text().strip() != value:
+      raise RuntimeError(f'Hardware setting did not stick: {path}')
+
+  def apply(self):
+    if self.mode != '12v' or not self.device.exists():
+      return
+    for index in range(4, 8):
+      path = self.cpu_root / f'cpu{index}/online'
+      old = path.read_text().strip()
+      if old != '1':
+        self.saved.append((path, old))
+        self.write(path, '1')
+    for index in (0, 4):
+      path = self.cpu_root / f'cpufreq/policy{index}/scaling_governor'
+      old = path.read_text().strip()
+      if old != 'performance':
+        self.saved.append((path, old))
+        self.write(path, 'performance')
+
+  def restore(self):
+    errors = []
+    for path, value in reversed(self.saved):
+      try:
+        self.write(path, value)
+      except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        errors.append(f'{path}: {exc}')
+    return errors
+
+  def verify(self):
+    if self.mode == '12v' and self.device.exists():
+      for index in range(4, 8):
+        if (self.cpu_root / f'cpu{index}/online').read_text().strip() != '1':
+          raise RuntimeError('Big CPU core went offline; another service may be changing power settings.')
+      for index in (0, 4):
+        if (self.cpu_root / f'cpufreq/policy{index}/scaling_governor').read_text().strip() != 'performance':
+          raise RuntimeError('CPU governor changed during the 12v run.')
+
+
+def clock_state(cpu_root=Path('/sys/devices/system/cpu'), gpu_root=Path('/sys/class/kgsl/kgsl-3d0')):
+  paths = list(cpu_root.glob('cpu[0-9]*/online'))
+  paths += list(cpu_root.glob('cpufreq/policy*/scaling_*freq'))
+  paths += list(cpu_root.glob('cpufreq/policy*/scaling_governor'))
+  paths += [gpu_root / name for name in ('gpuclk', 'min_pwrlevel', 'max_pwrlevel', 'devfreq/governor')]
+  state = {}
+  for path in paths:
+    try:
+      state[str(path)] = path.read_text().strip()
+    except OSError:
+      continue
+  return state
 
 
 class Workloads:
@@ -176,10 +242,12 @@ class Workloads:
         self.cpu_counters.append(counter)
         self.workers.append(mp.Process(target=cpu_worker, args=(self.stop, self.args.cpu_load / 100, counter)))
     if 'memory' in self.args.components:
-      self.workers.append(mp.Process(target=memory_worker, args=(self.stop, self.args.memory_mib, self.memory_counter)))
+      self.workers.append(mp.Process(target=memory_worker, args=(self.stop, self.args.memory_mib, self.memory_counter,
+                                                               self.args.memory_load / 100)))
     if 'storage' in self.args.components:
       self.workers.append(mp.Process(target=storage_worker, args=(self.stop, str(self.args.storage_dir.resolve()),
-                                                               self.args.storage_file_mib, self.storage_results)))
+                                                               self.args.storage_file_mib, self.storage_results,
+                                                               0.05 if self.args.power_mode == '5v' else 0)))
     for worker in self.workers:
       worker.start()
 
@@ -249,24 +317,41 @@ class Workloads:
 
 def parse_args(argv=None):
   parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument('--power-mode', choices=['5v', '12v'], default='5v', help='Manually select supply: gentle 5v (default) or bench 12v.')
   parser.add_argument('--components', nargs='+', choices=['cpu', 'memory', 'cameras', 'storage', 'storage-health'], required=True)
   parser.add_argument('--duration', type=float, default=60, help='Run time in seconds, 1 to 86400.')
-  parser.add_argument('--cpu-workers', type=int, default=min(2, os.cpu_count() or 1))
-  parser.add_argument('--cpu-load', type=float, default=50, help='Target duty cycle per CPU worker, 1 to 100 percent.')
-  parser.add_argument('--memory-mib', type=int, default=256)
+  parser.add_argument('--cpu-workers', type=int)
+  parser.add_argument('--cpu-load', type=float, help='Target duty cycle per CPU worker, 1 to 100 percent.')
+  parser.add_argument('--memory-mib', type=int)
+  parser.add_argument('--memory-load', type=float, help='RAM writer duty cycle, 1 to 100 percent.')
   parser.add_argument('--storage-dir', type=Path, default=Path('/data/media/0') if Path('/AGNOS').exists() else Path.cwd())
-  parser.add_argument('--storage-file-mib', type=int, default=128, help='Temporary test file size, 1 to 4096 MiB.')
-  parser.add_argument('--thermal-limit-c', type=float, default=80, help='Stop at this hottest reported sensor temperature (50 to 85 C).')
+  parser.add_argument('--storage-file-mib', type=int, help='Temporary test file size, 1 to 4096 MiB.')
+  parser.add_argument('--thermal-limit-c', type=float, help='Stop at this hottest reported sensor temperature (50 to 85 C).')
   parser.add_argument('--sample-interval', type=float, default=1)
   parser.add_argument('--output', type=Path, default=Path('/data/benchmarks') if Path('/AGNOS').exists() else Path('benchmark-results'))
   parser.add_argument('--openpilot-dir', type=Path, default=Path(__file__).resolve().parents[3])
   parser.add_argument('--dry-run', action='store_true', help='Print the selection without starting workloads or writing files.')
   args = parser.parse_args(argv)
+  gentle = args.power_mode == '5v'
+  defaults = {'cpu_workers': 1 if gentle else min(4, os.cpu_count() or 1), 'cpu_load': 25 if gentle else 100,
+              'memory_mib': 128 if gentle else 512, 'memory_load': 25 if gentle else 100,
+              'storage_file_mib': 32 if gentle else 128, 'thermal_limit_c': 70 if gentle else 80}
+  for name, value in defaults.items():
+    if getattr(args, name) is None:
+      setattr(args, name, value)
+  if gentle:
+    if 'cameras' in args.components:
+      parser.error('Camera stress requires --power-mode 12v; 5v supports CPU, memory and storage checks.')
+    if (('cpu' in args.components and (args.cpu_workers > 1 or args.cpu_load > 50)) or
+        ('memory' in args.components and (args.memory_mib > 256 or args.memory_load > 25)) or
+        ('storage' in args.components and args.storage_file_mib > 64) or args.thermal_limit_c > 70):
+      parser.error('5v limits: 1 CPU worker at <=50%, RAM <=256 MiB at <=25%, storage <=64 MiB, thermal stop <=70 C.')
   if not 1 <= args.duration <= 86400 or not 0.1 <= args.sample_interval <= 5:
     parser.error('duration must be 1..86400 seconds and sample interval 0.1..5 seconds')
   if not 1 <= args.cpu_workers <= (os.cpu_count() or 1) or not 1 <= args.cpu_load <= 100:
     parser.error('CPU workers must fit this machine and CPU load must be 1..100 percent')
-  if args.memory_mib < 1 or not 1 <= args.storage_file_mib <= 4096 or not 50 <= args.thermal_limit_c <= 85:
+  if (args.memory_mib < 1 or not 1 <= args.memory_load <= 100 or
+      not 1 <= args.storage_file_mib <= 4096 or not 50 <= args.thermal_limit_c <= 85):
     parser.error('memory must be positive and the thermal stop must be 50..85 C')
   args.components = sorted(set(args.components))
   return args
@@ -303,7 +388,8 @@ def run(args):
   workloads = Workloads(args, output)
   start = time.monotonic()
   previous_cpu = cpu_times()
-  summary = {'components': args.components, 'status': 'running', 'samples': 0}
+  summary = {'components': args.components, 'power_mode': args.power_mode, 'status': 'running', 'samples': 0}
+  power = BenchPower(args.power_mode)
   interrupted = False
 
   def stop_handler(signum, frame):
@@ -312,10 +398,14 @@ def run(args):
 
   previous_handlers = {sig: signal.signal(sig, stop_handler) for sig in (signal.SIGINT, signal.SIGTERM)}
   try:
+    power.apply()
+    manifest['hardware_start'] = clock_state()
+    (output / 'manifest.json').write_text(json.dumps(manifest, indent=2))
     workloads.start()
     with (output / 'samples.jsonl').open('w', buffering=1) as samples:
       while time.monotonic() - start < args.duration and not interrupted:
         require_offroad()
+        power.verify()
         temps = temperatures()
         if temps and max(temps.values()) >= args.thermal_limit_c:
           raise RuntimeError('Thermal stop temperature reached.')
@@ -329,7 +419,7 @@ def run(args):
         usage = 100 * (1 - (now_cpu[1] - previous_cpu[1]) / delta) if delta > 0 else 0
         previous_cpu = now_cpu
         sample = dict(elapsed_s=time.monotonic() - start, cpu_usage_pct=usage, memory_available_mib=info['available'] / MIB,
-                      temperatures_c=temps, **workloads.sample())
+                      temperatures_c=temps, hardware=clock_state(), **workloads.sample())
         samples.write(json.dumps(sample) + '\n')
         summary['samples'] += 1
         if workloads.messages is not None and sample['elapsed_s'] > 20:
@@ -347,6 +437,9 @@ def run(args):
     summary.update(status='stopped', reason=str(exc))
   finally:
     workloads.close()
+    restore_errors = power.restore()
+    if restore_errors:
+      summary.update(status='stopped', hardware_restore_errors=restore_errors)
     for sig, handler in previous_handlers.items():
       signal.signal(sig, handler)
     summary.update(elapsed_s=time.monotonic() - start, camera_first_frames=workloads.camera_first,

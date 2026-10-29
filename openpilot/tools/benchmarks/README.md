@@ -6,33 +6,66 @@ the normal offroad runtime available. The runner never enables driving,
 changes Params, sends CAN commands, or changes panda safety mode. It refuses
 to start on-road on a comma device and checks the offroad state while running.
 
+Choose the supply manually with `--power-mode 5v` or `--power-mode 12v`.
+The default is `5v`; the runner does not detect or change the input voltage.
+Use `12v` only when connected to your 12 V bench supply with cooling.
+
+| Setting | 5v: light checks | 12v: bench stress |
+| --- | --- | --- |
+| CPU default | 1 worker, 25% duty | Up to 4 workers, 100% duty |
+| RAM default | 128 MiB, 25% writer duty | 512 MiB, continuous writes |
+| Storage default | 32 MiB file, 50 ms pause per MiB written | 128 MiB file, unpaced writes |
+| Thermal stop default | 70 C | 80 C |
+| Cameras | Unavailable | Explicitly selectable |
+| Hardware settings | Retains existing power saving | Big cores online, CPU governors set to performance |
+
+5v enforces a maximum of one CPU worker at 50%, 256 MiB RAM at 25% writer
+duty, a 64 MiB storage file, and a 70 C thermal stop. Lower settings are allowed.
+CPU and RAM duty limits apply separately; combining workloads increases load.
+These are conservative software limits, not a measured power budget or a
+guarantee that every 5 V supply can sustain the device. Start with CPU alone
+or read-only storage health. These profiles still require physical validation.
+
+12v temporarily changes CPU settings on AGNOS devices using noninteractive
+sudo. It restores changed settings after completion, interruption, or setup
+failure, and reports restoration failures. A competing service changing core
+availability or CPU governors stops the run. Power loss or SIGKILL cannot run
+cleanup. Existing CPU frequency ceilings and GPU settings remain in effect;
+this mode does not overclock, disable thermal protection, or disable CPU idle
+states. GPU/model stress is not implemented yet. Hardware state is captured
+in the manifest and samples so inherited GPU settings and actual CPU clocks
+can be inspected. Read-only storage-health-only runs do not change hardware.
+
 Select only the hardware you want. Nothing is selected automatically:
 
 ```sh
 # Preview the configuration; no workloads or result files are created.
 python openpilot/tools/benchmarks/bench.py --components cpu memory --dry-run
 
-# Two CPU workers at a 50% duty cycle, plus 256 MiB of repeatedly written RAM.
+# Light 5 V CPU and RAM checks.
 # This does not start camerad or a storage workload.
-python openpilot/tools/benchmarks/bench.py --components cpu memory --duration 120
+python openpilot/tools/benchmarks/bench.py --power-mode 5v --components cpu memory --duration 120
+
+# 12 V bench CPU and RAM stress, with big cores online.
+python openpilot/tools/benchmarks/bench.py --power-mode 12v --components cpu memory --duration 120
 
 # CPU only, one worker at full load.
-python openpilot/tools/benchmarks/bench.py --components cpu --cpu-workers 1 --cpu-load 100
+python openpilot/tools/benchmarks/bench.py --power-mode 12v --components cpu --cpu-workers 1 --cpu-load 100
 
 # Memory only; keep the rest of the test selection unchanged.
-python openpilot/tools/benchmarks/bench.py --components memory --memory-mib 512
+python openpilot/tools/benchmarks/bench.py --power-mode 12v --components memory --memory-mib 512
 
 # Camera workload, optionally combined with other selections.
-python openpilot/tools/benchmarks/bench.py --components cameras --duration 60
+python openpilot/tools/benchmarks/bench.py --power-mode 12v --components cameras --duration 60
 
 # Read-only storage capacity, mount and available SMART information.
 python openpilot/tools/benchmarks/bench.py --components storage-health --storage-dir /data/media/0
 
 # Storage speed plus integrity, using its own temporary file on this filesystem.
-python openpilot/tools/benchmarks/bench.py --components storage --storage-dir /data/media/0 --storage-file-mib 128
+python openpilot/tools/benchmarks/bench.py --power-mode 12v --components storage --storage-dir /data/media/0 --storage-file-mib 128
 
 # Combined CPU, RAM and storage stress; cameras remain unselected.
-python openpilot/tools/benchmarks/bench.py --components cpu memory storage --duration 120
+python openpilot/tools/benchmarks/bench.py --power-mode 12v --components cpu memory storage --duration 120
 ```
 
 The device Python environment is required for the camera adapter; CPU, memory
@@ -65,7 +98,8 @@ may be unsupported or inaccessible; that is reported as unavailable, not healthy
 Use `--storage-dir /data` to test internal storage separately from mounted NVMe
 at `/data/media/0`; inspect the reported mount to confirm the actual device.
 
-Default thermal stop is 80 C (configurable 50–85 C). The runner checks memory
+Default thermal stop is 70 C in 5v mode and 80 C in 12v mode (configurable
+50–70 C and 50–85 C respectively). The runner checks memory
 headroom and reserves disk space for storage tests. It stops if the device
 goes on-road, a selected workload fails, thermal monitoring disappears on the
 device, or temperature/memory limits are reached. Ctrl+C stops and cleans up
