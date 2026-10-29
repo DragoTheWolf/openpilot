@@ -1,3 +1,19 @@
+# DragoTheWolf's Golf PQ openpilot project
+
+This project is derived from [commaai/openpilot](https://github.com/commaai/openpilot).
+It is hosted as an independent repository, with the original commit history
+preserved. Upstream attribution and license notices remain in place.
+
+- **`testing`**: modern Golf PQ development with factory cruise speed control,
+  AOL steering, and original comma 3 compatibility work. See [project details](GOLF_TESTING.md).
+- **`bench`**: selectable offroad hardware tests with separate light 5 V and
+  bench 12 V modes. See the [benchmark guide](openpilot/tools/benchmarks/README.md)
+  on that branch.
+- **Legacy comma 2 / Dragonpilot project**: maintained separately at
+  [DragoTheWolf/dragonpilotc2](https://github.com/DragoTheWolf/dragonpilotc2).
+
+The upstream project introduction follows below.
+
 <div align="center" style="text-align: center;">
 
 <h1>openpilot</h1>
