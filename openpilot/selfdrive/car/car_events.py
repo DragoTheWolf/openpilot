@@ -30,6 +30,7 @@ class CarEvents:
     self.silent_steer_warning = True
     self.aol_button_armed = {ButtonType.setCruise: False, ButtonType.resumeCruise: False}
     self.aol_cancel_pressed = False
+    self.aol_main_seen = False
 
   def update(self, CS: car.CarState, CS_prev: car.CarState, CC: car.CarControl):
     if self.CP.brand in ('body', 'mock'):
@@ -117,7 +118,8 @@ class CarEvents:
       events.add(EventName.doorOpen)
     if CS.seatbeltUnlatched:
       events.add(EventName.seatbeltNotLatched)
-    if CS.gearShifter != GearShifter.drive and CS.gearShifter not in CI.DRIVABLE_GEARS:
+    wrong_gear = CS.gearShifter != GearShifter.drive and CS.gearShifter not in CI.DRIVABLE_GEARS
+    if wrong_gear:
       events.add(EventName.wrongGear)
     if CS.gearShifter == GearShifter.reverse:
       events.add(EventName.reverseGear)
@@ -199,8 +201,12 @@ class CarEvents:
       for button in CS.buttonEvents:
         if button.type == ButtonType.cancel:
           self.aol_cancel_pressed = button.pressed
-      blocked = not CS.cruiseState.available or CS.accFaulted or self.aol_cancel_pressed
+      unavailable = not CS.cruiseState.available or CS.accFaulted or self.aol_cancel_pressed
+      blocked = unavailable or wrong_gear
       request = not CS_prev.accFaulted and CS.cruiseState.enabled and not CS_prev.cruiseState.enabled
+      request |= (self.aol_main_seen and CS.cruiseState.available and not CS_prev.cruiseState.available and
+                  not CS_prev.accFaulted)
+      self.aol_main_seen = True
       for button in CS.buttonEvents:
         button_type = button.type.raw
         if button_type in self.aol_button_armed:
@@ -211,9 +217,11 @@ class CarEvents:
             self.aol_button_armed[button_type] = False
       if blocked or CS.brakePressed:
         self.aol_button_armed = dict.fromkeys(self.aol_button_armed, False)
-      if blocked:
+      # Stopped gear changes use a normal disengagement cue. Moving gear
+      # warnings retain their existing urgency and state transitions.
+      if unavailable or (wrong_gear and CS.standstill and abs(CS.vEgo) < 0.3):
         events.add(EventName.pcmDisable)
-      elif request and not CS.blockPcmEnable and not CS.brakePressed:
+      elif not blocked and request and not CS.blockPcmEnable and not CS.brakePressed:
         events.add(EventName.buttonEnable)
 
     # we engage when pcm is active (rising edge)

@@ -22,8 +22,9 @@ DEFAULT_DEVICE_CAMERA = DEVICE_CAMERAS["tici", "ar0231"]
 BORDER_COLORS = {
   UIStatus.DISENGAGED: rl.Color(0x12, 0x28, 0x39, 0xFF),  # Blue for disengaged state
   UIStatus.OVERRIDE: rl.Color(0x89, 0x92, 0x8D, 0xFF),  # Gray for override state
-  UIStatus.ENGAGED: rl.Color(0x16, 0x7F, 0x40, 0xFF),  # Green for engaged state
+  UIStatus.ENGAGED: rl.Color(0x16, 0x4B, 0x89, 0xFF),  # Dark blue for engaged state
 }
+AOL_BORDER_COLOR = rl.Color(0x60, 0xB5, 0xFF, 0xFF)
 
 WIDE_CAM_MAX_SPEED = 5.0  # m/s (11 mph)
 ROAD_CAM_MIN_SPEED = 10.0  # m/s (22 mph)
@@ -105,9 +106,16 @@ class AugmentedRoadView(CameraView):
     rl.draw_rectangle_lines_ex(rect, UI_BORDER_SIZE, rl.BLACK)
     border_roundness = 0.12
     border_color = BORDER_COLORS.get(ui_state.status, BORDER_COLORS[UIStatus.DISENGAGED])
+    lateral_only = ui_state.aol_lateral_only
+    if ui_state.status == UIStatus.ENGAGED and ui_state.aol_without_cruise:
+      border_color = BORDER_COLORS[UIStatus.DISENGAGED]
     border_rect = rl.Rectangle(rect.x + UI_BORDER_SIZE, rect.y + UI_BORDER_SIZE,
                                rect.width - 2 * UI_BORDER_SIZE, rect.height - 2 * UI_BORDER_SIZE)
     rl.draw_rectangle_rounded_lines_ex(border_rect, border_roundness, 10, UI_BORDER_SIZE, border_color)
+    if lateral_only:
+      strip = rl.Rectangle(rect.x + rect.width * 0.2, rect.y + rect.height - 1.5 * UI_BORDER_SIZE,
+                           rect.width * 0.6, UI_BORDER_SIZE)
+      rl.draw_rectangle_rounded(strip, 0.6, 10, AOL_BORDER_COLOR)
 
   def _switch_stream_if_needed(self, sm):
     if sm['carParams'].openpilotLongitudinalControl and WIDE_CAM in self.available_streams:

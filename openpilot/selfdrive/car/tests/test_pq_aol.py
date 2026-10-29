@@ -8,6 +8,7 @@ from openpilot.cereal import log
 from openpilot.selfdrive.car.car_events import CarEvents, brake_disengages
 from openpilot.selfdrive.car.volkswagen import AOL_PARAM, apply_pq_aol, pq_aol_enabled, set_pq_aol
 from openpilot.selfdrive.selfdrived.state import StateMachine
+from openpilot.selfdrive.selfdrived.events import ET, AudibleAlert
 
 EventName = log.OnroadEvent.EventName
 Button = structs.CarState.ButtonEvent.Type
@@ -76,6 +77,79 @@ def test_default_mode_still_requires_factory_cruise(configuration):
   assert EventName.pcmDisable in events.names
   assert EventName.buttonEnable not in events.names
   assert brake_disengages(cp, state(brakePressed=True), state(), True)
+
+
+def test_main_switch_engages_once_and_main_off_disengages(configuration):
+  cp, params = configuration
+  enable_aol(cp, params)
+  events, sm = CarEvents(cp), StateMachine()
+  off, on = state(main=False), state()
+  events.update(off, off, structs.CarControl())
+  assert sm.update(events.update(on, off, structs.CarControl())) == (True, True)
+  assert sm.update(events.update(off, on, structs.CarControl(enabled=True))) == (False, False)
+  assert EventName.buttonEnable not in events.update(off, off, structs.CarControl()).names
+
+
+@pytest.mark.parametrize('block', ['brakePressed', 'accFaulted', 'blockPcmEnable'])
+def test_main_switch_blocked_and_no_auto_retry(configuration, block):
+  cp, params = configuration
+  enable_aol(cp, params)
+  events = CarEvents(cp)
+  off = state(main=False)
+  events.update(off, off, structs.CarControl())
+  blocked = state(**{block: True})
+  assert EventName.buttonEnable not in events.update(blocked, off, structs.CarControl()).names
+  assert EventName.buttonEnable not in events.update(state(), blocked, structs.CarControl()).names
+
+
+def test_main_already_on_at_startup_does_not_engage(configuration):
+  cp, params = configuration
+  enable_aol(cp, params)
+  events = CarEvents(cp)
+  assert EventName.buttonEnable not in events.update(state(), state(main=False), structs.CarControl()).names
+
+
+@pytest.mark.parametrize('gear', [structs.CarState.GearShifter.park, structs.CarState.GearShifter.reverse,
+                                structs.CarState.GearShifter.neutral, structs.CarState.GearShifter.unknown])
+def test_gear_change_disables_aol_without_urgent_stopped_alert(configuration, gear):
+  cp, params = configuration
+  enable_aol(cp, params)
+  events, sm = CarEvents(cp), StateMachine()
+  off, on = state(main=False), state()
+  events.update(off, off, structs.CarControl())
+  assert sm.update(events.update(on, off, structs.CarControl())) == (True, True)
+  non_drive = state(gearShifter=gear, standstill=True)
+  result = events.update(non_drive, on, structs.CarControl(enabled=True))
+  assert EventName.wrongGear in result.names
+  assert sm.update(result) == (False, False)
+  alerts = result.create_alerts(sm.current_alert_types, [cp, non_drive, None, True, 0, 0])
+  assert all(a.audible_alert not in (AudibleAlert.warningImmediate, AudibleAlert.warningSoft) for a in alerts)
+  assert EventName.buttonEnable not in events.update(on, non_drive, structs.CarControl()).names
+  # SET/RES and switch requests in a non-driving gear remain blocked.
+  events.update(state(main=False, gearShifter=gear), non_drive, structs.CarControl())
+  assert EventName.buttonEnable not in events.update(non_drive, state(main=False, gearShifter=gear), structs.CarControl()).names
+
+
+@pytest.mark.parametrize('aol,stopped,speed', [(False, True, 0), (True, False, 2), (True, True, 2)])
+def test_reverse_urgent_alert_preserved_outside_stopped_aol(configuration, aol, stopped, speed):
+  cp, params = configuration
+  if aol:
+    enable_aol(cp, params)
+  cs = state(gearShifter=structs.CarState.GearShifter.reverse, standstill=stopped, vEgo=speed)
+  result = CarEvents(cp).update(cs, state(), structs.CarControl(enabled=True))
+  alerts = result.create_alerts([ET.USER_DISABLE], [cp, cs, None, True, 0, 0])
+  assert any(a.audible_alert == AudibleAlert.warningImmediate for a in alerts)
+
+
+def test_non_drive_warning_while_moving_is_preserved(configuration):
+  cp, params = configuration
+  enable_aol(cp, params)
+  cs = state(gearShifter=structs.CarState.GearShifter.neutral, standstill=False, vEgo=5)
+  result = CarEvents(cp).update(cs, state(), structs.CarControl(enabled=True))
+  assert EventName.pcmDisable not in result.names
+  assert result.contains(ET.SOFT_DISABLE)
+  alerts = result.create_alerts([ET.SOFT_DISABLE], [cp, cs, None, True, 100, 0])
+  assert any(a.audible_alert == AudibleAlert.warningSoft for a in alerts)
 
 
 @pytest.mark.parametrize('configuration_name', ['not_pq', 'not_cc', 'other_model', 'other_brand', 'not_pcm', 'longitudinal'])

@@ -3,7 +3,7 @@ from opendbc.car.volkswagen.values import CAR, VolkswagenFlags, VolkswagenSafety
 PATCHED_EPS_PARAM = "VwPqEpsPatched"
 AOL_PARAM = "VwPqAol"
 AOL_DESCRIPTION = (
-  "Enable factory cruise to engage steering. Braking cancels factory speed control but keeps AOL steering active. " +
+  "Flip cruise main on to engage steering, or use factory cruise/SET/RES. Braking cancels factory speed control but keeps AOL steering active. " +
   "SET/RES can engage steering with cruise main on; Cancel or main off disengages it. " +
   "Factory cruise alone controls speed. Change while parked, then reboot."
 )

@@ -28,13 +28,21 @@ The flashed-EPS update passes **204 tests and 106 subtests**, with 81 skips, acr
 
 Enable **Settings → Toggles → AOL (CC Only)** offroad and reboot. It defaults off and applies only to this detected NMS/Golf PQ CC-only configuration. The matching panda debug firmware must be rebuilt from the pinned modified opendbc source; startup's firmware signature check handles a stale installed panda image. This mode adds no acceleration commands or automatic SET/RESUME messages.
 
-- Engaging factory cruise requests steering engagement, subject to normal checks. Cruise main on by itself does not engage steering.
+- Flipping cruise main off then on requests steering engagement, subject to normal checks. A switch already on at startup does not automatically engage. Engaging factory cruise also requests steering engagement.
 - After a cancellation, a deliberate SET/RES button press and release requests engagement again. Those physical buttons also retain their normal factory-cruise function.
 - Braking cancels factory speed control normally and retains already-engaged AOL steering. A held brake cannot start a new steering engagement. Releasing the brake does not start a disabled steering session.
 - Cancel, main off, or an engine cruise fault disengages steering. Clearing a fault does not automatically re-engage it.
+- Stopped changes into Park, Neutral or Reverse disengage with the normal cue instead of an urgent takeover alarm. Non-driving gears still block engagement; returning to Drive requires a fresh switch cycle or SET/RES action. Moving gear warnings retain their normal urgency.
+- On C3/C3X, active AOL steering without factory speed control has a light-blue bottom strip. Factory cruise plus steering has a full dark-blue border. Inactive steering has no active AOL strip; overrides and alerts retain their normal presentation.
 - Factory cruise alone controls speed. Disengaging steering does not automatically send a factory-cruise cancel. The brake-retention exception is restricted to the explicitly selected PQ CC-only AOL safety mode; stock PQ and other safety modes retain their normal brake disengagement. Door, seatbelt, gear, driver-monitoring, steering-fault, torque/rate, receive-validity, relay, and heartbeat protections remain. Normal Park/reverse and standstill policies are retained; this is not a parked steering override.
 
 PQ active steering already uses **HCA7**, with HCA3 for inactive/zero-torque output. A controller-output test verifies this; no HCA5 switch or torque-limit relaxation was needed.
+
+The October 29 switch/display update passes 379 focused host/UI/Volkswagen tests
+(131 skipped, 20 subtests), 3,030 full native safety tests (1,395 skipped, 9,736
+subtests), MISRA analysis, Python lint and F4/H7 firmware builds. The C3 UI
+border code was rendered offline. Physical testing of these latest switch,
+gear-alert and display changes remains pending; the device was powered off.
 
 ## Default model
 

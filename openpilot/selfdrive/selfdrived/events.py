@@ -13,6 +13,7 @@ from openpilot.common.git import get_short_branch
 from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.locationd.calibrationd import MIN_SPEED_FILTER
 from openpilot.common.hardware import HARDWARE
+from openpilot.selfdrive.car.volkswagen import pq_aol_enabled
 
 AlertSize = log.SelfdriveState.AlertSize
 AlertStatus = log.SelfdriveState.AlertStatus
@@ -234,6 +235,14 @@ def user_soft_disable_alert(alert_text_2: str) -> AlertCallbackType:
       return ImmediateDisableAlert(alert_text_2)
     return UserSoftDisableAlert(alert_text_2)
   return func
+
+def reverse_disengage_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+  # A deliberate gear change while stopped is a normal AOL disengagement.
+  # Keep the urgent warning if moving or outside this scoped factory-CC port.
+  if pq_aol_enabled(CP) and CS.standstill and abs(CS.vEgo) < 0.3:
+    return EngagementAlert(AudibleAlert.disengage)
+  return ImmediateDisableAlert("Reverse Gear")
+
 
 def startup_master_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
   branch = get_short_branch()  # Ensure get_short_branch is cached to avoid lags on startup
@@ -957,7 +966,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "",
       AlertStatus.normal, AlertSize.full,
       Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .2, creation_delay=0.5),
-    ET.USER_DISABLE: ImmediateDisableAlert("Reverse Gear"),
+    ET.USER_DISABLE: reverse_disengage_alert,
     ET.NO_ENTRY: NoEntryAlert("Reverse Gear"),
   },
 

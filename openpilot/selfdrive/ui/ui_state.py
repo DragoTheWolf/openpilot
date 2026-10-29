@@ -15,6 +15,7 @@ from openpilot.common.hardware import HARDWARE, PC
 from openpilot.common.hardware.usb import cable_connected, get_usb_state, is_chestnut_usb_id
 from openpilot.selfdrive.modeld.helpers import chestnut_compiled
 from openpilot.selfdrive.selfdrived.alertmanager import OFFROAD_ALERTS
+from openpilot.selfdrive.car.volkswagen import pq_aol_enabled
 
 BACKLIGHT_OFFROAD = 65 if HARDWARE.get_device_type() == "mici" else 50
 PARAM_UPDATE_TIME = 1 / 5.0
@@ -213,6 +214,17 @@ class UIState:
         callback()
 
       self._started_prev = self.started
+
+  @property
+  def aol_without_cruise(self) -> bool:
+    return self.CP is not None and pq_aol_enabled(self.CP) and not self.sm['carState'].cruiseState.enabled
+
+  @property
+  def aol_lateral_only(self) -> bool:
+    return (self.aol_without_cruise and self.status == UIStatus.ENGAGED and
+            self.sm.all_checks(['selfdriveState', 'carState', 'carControl']) and
+            self.sm['selfdriveState'].active and self.sm['carControl'].latActive and
+            self.sm['selfdriveState'].alertStatus == log.SelfdriveState.AlertStatus.normal)
 
   def _update_chestnut_state(self) -> None:
     detected = self.sm["deviceState"].chestnutPresent
