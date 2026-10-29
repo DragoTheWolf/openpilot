@@ -1,16 +1,6 @@
 # DragoTheWolf's Golf PQ openpilot project
 
-This project is derived from [commaai/openpilot](https://github.com/commaai/openpilot).
-It is hosted as an independent repository, with the original commit history
-preserved. Upstream attribution and license notices remain in place.
-
-- **`testing`**: modern Golf PQ development with factory cruise speed control,
-  AOL steering, and original comma 3 compatibility work. See [project details](GOLF_TESTING.md).
-- **`bench`**: selectable offroad hardware tests with separate light 5 V and
-  bench 12 V modes. See the [benchmark guide](https://github.com/DragoTheWolf/openpilot/blob/bench/openpilot/tools/benchmarks/README.md)
-  on that branch.
-- **Legacy comma 2 / Dragonpilot project**: maintained separately at
-  [DragoTheWolf/dragonpilotc2](https://github.com/DragoTheWolf/dragonpilotc2).
+This project is derived from commaai/openpilot. It is hosted as an independent repository. Upstream attribution and license notices remain in place. Test vehicle is a 2014 VW Golf with stock CC.
 
 The upstream project introduction follows below.
 
